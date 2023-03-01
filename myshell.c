@@ -7,29 +7,22 @@
 #define ANSI_RESET      "\e[0m"
 #define ANSI_GREEN      "\e[1;32m"
 #define ANSI_RED        "\e[1;31m"
-#define MIN_LINE_SIZE   32
+#define LINE_MAX        4096
 
 /**
  * Read a single line from stdin. Allocates memory so don't
  * forget to free it.
+ * @param buff the string to write to.
+ * @param max the number of characters to read plus one extra character for null byte.
 */
-char *readline()
+int readline(char buff[], size_t max)
 {
-    int line_delta = 16;
-    int line_size = MIN_LINE_SIZE;
-    char *line = calloc(line_size + 1, sizeof(char));
-
-    int c, r = 0;
-    while ((c = getchar()) != EOF && c != '\n') {
-        if (r == line_size) {
-            line_size += line_delta;
-            line = realloc(line, line_size + 1);
-        }
-        line[r++] = c;
+    int c, read = 0;
+    while (read < max - 1 && (c = getchar()) != EOF && c != '\n') {
+        buff[read++] = c;
     }
-
-    line[r] = '\0';
-    return line;
+    buff[read] = '\0';
+    return read;
 }
 
 /**
@@ -42,46 +35,57 @@ char **parse_args(char *line)
     int argc = 0;
     char **argv = calloc(block + 1, sizeof(char*));
 
-    char *tok = strtok(line, " ");
-    while (tok != NULL) {
+    line = strtok(line, " ");
+    while (line != NULL) {
         if (argc == block) {
             block += block_size;
             argv = realloc(argv, sizeof(char*) * block);
         }
 
-        argv[argc++] = tok;
-        tok = strtok(NULL, " ");
+        argv[argc++] = line;
+        line = strtok(NULL, " ");
     }
 
     argv[argc] = NULL;
     return argv;
 }
 
+/**
+ * Starts a process and passes command line arguments to it.
+ * @param name the name of the process
+ * @param argv the array of command line arguments.
+*/
+void run_process(char name[], char *argv[])
+{
+    pid_t proc = fork();
+    if (proc == 0) {
+        execvp(name, argv);
+        printf(ANSI_RED"%s "ANSI_RESET"is not a valid command or script.\n", argv[0]);
+        exit(1);
+    } else if (proc < 0) {
+        fprintf(stderr, "Failed to start process.\n");
+    } else {
+        waitpid(proc, NULL, 0);   
+    }
+}
+
 int main()
 {
     char *cwd = getenv("PWD");
+    char line[LINE_MAX];
 
     while (1) {
         printf(ANSI_GREEN"%s"ANSI_RESET" $ ", cwd);
-        char *line = readline();
+        readline(line, LINE_MAX);
         char **argv = parse_args(line);
 
         if (strcmp(line, "exit") == 0) {
             free(argv);
-            free(line);
             break;
         }
 
-        pid_t proc = fork();
-        if (proc == 0) {
-            execvp(line, argv);
-            printf(ANSI_RED"%s "ANSI_RESET"is not a valid command or script.\n", argv[0]);
-        }
-
-        waitpid(proc, NULL, 0);
-
+        run_process(argv[0], argv);
         free(argv);
-        free(line);
     }
 
     return 0;
