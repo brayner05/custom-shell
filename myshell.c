@@ -40,7 +40,7 @@ char **parse_args(char *line)
 {   
     int block_size = 16, block = block_size;
     int argc = 0;
-    char **argv = malloc(sizeof(char*) * block);
+    char **argv = calloc(block + 1, sizeof(char*));
 
     char *tok = strtok(line, " ");
     while (tok != NULL) {
@@ -53,6 +53,7 @@ char **parse_args(char *line)
         tok = strtok(NULL, " ");
     }
 
+    argv[argc] = NULL;
     return argv;
 }
 
