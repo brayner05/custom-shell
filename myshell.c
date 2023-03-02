@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <stdarg.h>
 #include "toml.h"
 
 #define ANSI_RESET      "\e[0m"
@@ -12,6 +13,23 @@
 #define PATH_MAX        2048
 
 typedef const char *Colour;
+
+/**
+ * Prints an error message in red and returns an exit code for failure.
+ * @param fmt the format to follow.
+*/
+int error(char fmt[], ...)
+{
+    va_list args;
+    va_start(args, fmt);
+
+    fprintf(stderr, ANSI_RED);
+    vfprintf(stderr, fmt, args);
+    fprintf(stderr, ANSI_RESET);
+
+    va_end(args);
+    return -1;
+}
 
 /**
  * Read a single line from stdin. Allocates memory so don't
@@ -73,7 +91,7 @@ void run_process(char name[], char *argv[])
         exit(1);
     } else if (proc < 0) {
         // If the process fails to start
-        fprintf(stderr, "Failed to start process.\n");
+        error("Failed to start process.\n");
     } else {
         // If running from the parent process, wait for the child process to finish.
         waitpid(proc, NULL, 0);   
@@ -123,19 +141,21 @@ Colour get_prompt_colour(toml_table_t *conf)
  * environment variable.
  * @param config_path the buffer in which to store the path
 */
-void parse_config_path(char config_path[PATH_MAX])
+void parse_config_path(char config_path[PATH_MAX + 1])
 {
-    strcpy(config_path, "/home/");
-    strcat(config_path, getenv("USER"));
-    strcat(config_path, "/.config/myshell/myshellconfig.toml");
+    snprintf(
+        config_path, PATH_MAX,
+        "/home/%s/.config/myshell/myshellconfig.toml",
+        getenv("USER")
+    );
 }
 
 int main()
 {
-    char line[LINE_MAX], cwd[PATH_MAX];
+    char line[LINE_MAX + 1], cwd[PATH_MAX + 1];
     Colour prompt_colour = ANSI_GREEN;
 
-    char config_path[PATH_MAX];
+    char config_path[PATH_MAX + 1];
     parse_config_path(config_path);
 
     toml_table_t *conf = load_config(config_path);
@@ -146,14 +166,13 @@ int main()
     }
 
     while (1) {
-        getcwd(cwd, PATH_MAX);
+        getcwd(cwd, PATH_MAX + 1);
         printf("%s~%s"ANSI_RESET" $ ", prompt_colour, cwd);
-        readline(line, LINE_MAX);
+        readline(line, LINE_MAX + 1);
 
         char **argv = parse_args(line);
         if (argv == NULL) {
-            fprintf(stderr, ANSI_RED"OUT OF MEMORY\n"ANSI_RESET);
-            exit(-1);
+            exit(error("OUT OF MEMORY"));
         }
 
         if (argv[0] == NULL) {
@@ -165,7 +184,7 @@ int main()
         } else if (strcmp(argv[0], "cd") == 0) {
             // Change the current working directory.
             if (argv[1] != NULL && chdir(argv[1]) != 0) {
-                fprintf(stderr, ANSI_RED"%s is not a directory.\n"ANSI_RESET, argv[1]);
+                error("%s "ANSI_RESET"is not a directory.\n", argv[1]);
             }
         } else {
             // Run the given command.
