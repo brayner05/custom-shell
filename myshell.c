@@ -3,12 +3,15 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include "toml.h"
 
 #define ANSI_RESET      "\e[0m"
 #define ANSI_GREEN      "\e[1;32m"
 #define ANSI_RED        "\e[1;31m"
 #define LINE_MAX        4096
 #define PATH_MAX        2048
+
+typedef const char *Colour;
 
 /**
  * Read a single line from stdin. Allocates memory so don't
@@ -77,17 +80,75 @@ void run_process(char name[], char *argv[])
     }
 }
 
+/**
+ * Loads the config data from the users computer. The config data will include
+ * things such as prompt colour and more.
+ * @param config_path the path to the config file
+*/
+toml_table_t *load_config(const char *config_path)
+{
+    FILE *config_fp = fopen(config_path, "r");
+    if (config_fp == NULL) {
+        return NULL;
+    } else {
+        toml_table_t *conf = toml_parse_file(config_fp, NULL, 0);
+        fclose(config_fp);
+        return conf;
+    }
+}
+
+/**
+ * Search the config file for a prompt colour and return that colour.
+ * @param conf the TOML table containing the colour data.
+*/
+Colour get_prompt_colour(toml_table_t *conf)
+{
+    toml_table_t *colour_data = toml_table_in(conf, "colours");
+    if (colour_data != NULL) {
+        toml_datum_t prompt_colour_data = toml_string_in(colour_data, "prompt");
+        if (strcmp(prompt_colour_data.u.s, "green") == 0) {
+            free(prompt_colour_data.u.s);
+            return ANSI_GREEN;
+        } else if (strcmp(prompt_colour_data.u.s, "red") == 0) {
+            free(prompt_colour_data.u.s);
+            return ANSI_RED;
+        }
+    }
+    toml_free(colour_data);
+    return NULL;
+}
+
+/**
+ * Parse the path to the user's config file using the USER 
+ * environment variable.
+ * @param config_path the buffer in which to store the path
+*/
+void parse_config_path(char config_path[PATH_MAX])
+{
+    strcpy(config_path, "/home/");
+    strcat(config_path, getenv("USER"));
+    strcat(config_path, "/.config/myshell/myshellconfig.toml");
+}
+
 int main()
 {
-    char line[LINE_MAX];
-    char cwd[PATH_MAX];
+    char line[LINE_MAX], cwd[PATH_MAX];
+    Colour prompt_colour = ANSI_GREEN;
+
+    char config_path[PATH_MAX];
+    parse_config_path(config_path);
+
+    toml_table_t *conf = load_config(config_path);
+    if (conf != NULL) {
+        Colour c = get_prompt_colour(conf);
+        prompt_colour = c ? c : ANSI_GREEN;
+        toml_free(conf);
+    }
 
     while (1) {
         getcwd(cwd, PATH_MAX);
-        printf(ANSI_GREEN"~%s"ANSI_RESET" $ ", cwd);
-        if (readline(line, LINE_MAX) == 0) {
-            // Failed to read line
-        }
+        printf("%s~%s"ANSI_RESET" $ ", prompt_colour, cwd);
+        readline(line, LINE_MAX);
 
         char **argv = parse_args(line);
         if (argv == NULL) {
