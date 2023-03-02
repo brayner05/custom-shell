@@ -8,6 +8,7 @@
 #define ANSI_GREEN      "\e[1;32m"
 #define ANSI_RED        "\e[1;31m"
 #define LINE_MAX        4096
+#define PATH_MAX        2048
 
 /**
  * Read a single line from stdin. Allocates memory so don't
@@ -34,7 +35,11 @@ char **parse_args(char *line)
     int block_size = 16, block = block_size;
     int argc = 0;
     char **argv = calloc(block + 1, sizeof(char*));
+    if (argv == NULL) {
+        return NULL;
+    }
 
+    // Split the input line into an argument vector.
     line = strtok(line, " ");
     while (line != NULL) {
         if (argc == block) {
@@ -53,38 +58,59 @@ char **parse_args(char *line)
 /**
  * Starts a process and passes command line arguments to it.
  * @param name the name of the process
- * @param argv the array of command line arguments.
+ * @param argv the array of command line arguments
 */
 void run_process(char name[], char *argv[])
 {
     pid_t proc = fork();
     if (proc == 0) {
         execvp(name, argv);
+        // Execution will only reach this point if the process fails.
         printf(ANSI_RED"%s "ANSI_RESET"is not a valid command or script.\n", argv[0]);
         exit(1);
     } else if (proc < 0) {
+        // If the process fails to start
         fprintf(stderr, "Failed to start process.\n");
     } else {
+        // If running from the parent process, wait for the child process to finish.
         waitpid(proc, NULL, 0);   
     }
 }
 
 int main()
 {
-    char *cwd = getenv("PWD");
     char line[LINE_MAX];
+    char cwd[PATH_MAX];
 
     while (1) {
-        printf(ANSI_GREEN"%s"ANSI_RESET" $ ", cwd);
-        readline(line, LINE_MAX);
-        char **argv = parse_args(line);
-
-        if (strcmp(line, "exit") == 0) {
-            free(argv);
-            break;
+        getcwd(cwd, PATH_MAX);
+        printf(ANSI_GREEN"~%s"ANSI_RESET" $ ", cwd);
+        if (readline(line, LINE_MAX) == 0) {
+            // Failed to read line
         }
 
-        run_process(argv[0], argv);
+        char **argv = parse_args(line);
+        if (argv == NULL) {
+            fprintf(stderr, ANSI_RED"OUT OF MEMORY\n"ANSI_RESET);
+            exit(-1);
+        }
+
+        if (argv[0] == NULL) {
+            ;
+        } else if (strcmp(argv[0], "exit") == 0) {
+            // Exit the shell.
+            free(argv);
+            exit(0);
+        } else if (strcmp(argv[0], "cd") == 0) {
+            // Change the current working directory.
+            if (argv[1] != NULL && chdir(argv[1]) != 0) {
+                fprintf(stderr, ANSI_RED"%s is not a directory.\n"ANSI_RESET, argv[1]);
+            }
+        } else {
+            // Run the given command.
+            run_process(argv[0], argv);
+        }
+
         free(argv);
     }
 
