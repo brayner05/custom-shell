@@ -108,11 +108,12 @@ toml_table_t *load_config(const char *config_path)
     FILE *config_fp = fopen(config_path, "r");
     if (config_fp == NULL) {
         return NULL;
-    } else {
-        toml_table_t *conf = toml_parse_file(config_fp, NULL, 0);
-        fclose(config_fp);
-        return conf;
     }
+
+    toml_table_t *conf = toml_parse_file(config_fp, NULL, 0);
+    fclose(config_fp);
+    
+    return conf;
 }
 
 /**
@@ -122,18 +123,21 @@ toml_table_t *load_config(const char *config_path)
 Colour get_prompt_colour(toml_table_t *conf)
 {
     toml_table_t *colour_data = toml_table_in(conf, "colours");
-    if (colour_data != NULL) {
-        toml_datum_t prompt_colour_data = toml_string_in(colour_data, "prompt");
-        if (strcmp(prompt_colour_data.u.s, "green") == 0) {
-            free(prompt_colour_data.u.s);
-            return ANSI_GREEN;
-        } else if (strcmp(prompt_colour_data.u.s, "red") == 0) {
-            free(prompt_colour_data.u.s);
-            return ANSI_RED;
-        }
+    if (colour_data == NULL) {
+        return NULL;
     }
-    toml_free(colour_data);
-    return NULL;
+
+    Colour prompt_colour = NULL;
+    toml_datum_t prompt_colour_data = toml_string_in(colour_data, "prompt");
+
+    if (strcmp(prompt_colour_data.u.s, "green") == 0) {
+        prompt_colour = ANSI_GREEN;
+    } else if (strcmp(prompt_colour_data.u.s, "red") == 0) {
+        prompt_colour = ANSI_RED;
+    }
+
+    free(prompt_colour_data.u.s);
+    return prompt_colour;
 }
 
 /**
@@ -150,10 +154,37 @@ void parse_config_path(char config_path[PATH_MAX + 1])
     );
 }
 
+/**
+ * Converts a line to a command an arguments, and then runs it.
+ * @param line the raw line entered by the user
+*/
+void process_line(char *line)
+{
+    char **argv = parse_args(line);
+    if (argv == NULL) {
+        exit(error("OUT OF MEMORY"));
+    }
+
+    if (argv[0] == NULL) return;
+
+    if (strcmp(argv[0], "exit") == 0) {
+        free(argv);
+        exit(0);
+    } else if (strcmp(argv[0], "cd") == 0) {
+        if (argv[1] != NULL && chdir(argv[1]) != 0) {
+            error("%s "ANSI_RESET"is not a directory.\n", argv[1]);
+        }
+    } else {
+        run_process(argv[0], argv);
+    }
+
+    free(argv);
+}
+
 int main()
 {
     char line[LINE_MAX + 1], cwd[PATH_MAX + 1];
-    Colour prompt_colour = ANSI_GREEN;
+    Colour prompt_colour = ANSI_RED;
 
     char config_path[PATH_MAX + 1];
     parse_config_path(config_path);
@@ -169,29 +200,7 @@ int main()
         getcwd(cwd, PATH_MAX + 1);
         printf("%s~%s"ANSI_RESET" $ ", prompt_colour, cwd);
         readline(line, LINE_MAX + 1);
-
-        char **argv = parse_args(line);
-        if (argv == NULL) {
-            exit(error("OUT OF MEMORY"));
-        }
-
-        if (argv[0] == NULL) {
-            ;
-        } else if (strcmp(argv[0], "exit") == 0) {
-            // Exit the shell.
-            free(argv);
-            exit(0);
-        } else if (strcmp(argv[0], "cd") == 0) {
-            // Change the current working directory.
-            if (argv[1] != NULL && chdir(argv[1]) != 0) {
-                error("%s "ANSI_RESET"is not a directory.\n", argv[1]);
-            }
-        } else {
-            // Run the given command.
-            run_process(argv[0], argv);
-        }
-
-        free(argv);
+        process_line(line);
     }
 
     return 0;
