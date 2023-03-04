@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <stdarg.h>
+#include <ctype.h>
 #include "toml.h"
 
 #define ANSI_RESET      "\e[0m"
@@ -11,6 +12,7 @@
 #define ANSI_RED        "\e[1;31m"
 #define LINE_MAX        4096
 #define PATH_MAX        2048
+#define ARGS_MAX        LINE_MAX
 
 typedef const char *Colour;
 
@@ -52,29 +54,16 @@ int readline(char buff[], size_t max)
  * Parse a line into a structure containing argc and argv.
  * @param line the line from which to parse argv.
 */
-char **parse_args(char *line)
-{   
-    int block_size = 16, block = block_size;
+void parse_args(char *line, char *argv[ARGS_MAX + 1])
+{
     int argc = 0;
-    char **argv = calloc(block + 1, sizeof(char*));
-    if (argv == NULL) {
-        return NULL;
-    }
-
-    // Split the input line into an argument vector.
     line = strtok(line, " ");
     while (line != NULL) {
-        if (argc == block) {
-            block += block_size;
-            argv = realloc(argv, sizeof(char*) * block);
-        }
-
         argv[argc++] = line;
         line = strtok(NULL, " ");
     }
 
     argv[argc] = NULL;
-    return argv;
 }
 
 /**
@@ -82,7 +71,7 @@ char **parse_args(char *line)
  * @param name the name of the process
  * @param argv the array of command line arguments
 */
-void run_process(char name[], char *argv[])
+void run_process(char name[], char *argv[ARGS_MAX + 1])
 {
     pid_t proc = fork();
     if (proc == 0) {
@@ -93,6 +82,7 @@ void run_process(char name[], char *argv[])
     } else if (proc < 0) {
         // If the process fails to start
         error("Failed to start process.\n");
+
     } else {
         // If running from the parent process, wait for the child process to finish.
         waitpid(proc, NULL, 0);   
@@ -160,19 +150,19 @@ void parse_config_path(char config_path[PATH_MAX + 1])
  * @param line the raw line entered by the user
 */
 void process_line(char *line)
-{
-    char **argv = parse_args(line);
+{   
+    char *argv[ARGS_MAX + 1];
+    memset(argv, 0, (ARGS_MAX + 1) * sizeof(char*));
+    parse_args(line, argv);
+
     if (argv == NULL) {
         exit(error("OUT OF MEMORY"));
     }
 
-    if (argv[0] == NULL) {
-        free(argv);
-        return;
-    }
+    // If a blank line is passed.
+    if (argv[0] == NULL) return;
 
     if (strcmp(argv[0], "exit") == 0) {
-        free(argv);
         exit(0);
     } else if (strcmp(argv[0], "cd") == 0) {
         if (argv[1] != NULL && chdir(argv[1]) != 0) {
@@ -181,13 +171,13 @@ void process_line(char *line)
     } else {
         run_process(argv[0], argv);
     }
-
-    free(argv);
 }
 
 int main()
 {
-    char line[LINE_MAX + 1], cwd[PATH_MAX + 1];
+    char line[LINE_MAX + 1];
+    char cwd[PATH_MAX + 1];
+
     Colour prompt_colour = ANSI_RED;
 
     char config_path[PATH_MAX + 1];
