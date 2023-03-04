@@ -43,6 +43,7 @@ int readline(char buff[], size_t max)
     while (read < max - 1 && (c = getchar()) != EOF && c != '\n') {
         buff[read++] = c;
     }
+    if (read >= max - 1) fflush(stdin);
     buff[read] = '\0';
     return read;
 }
