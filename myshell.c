@@ -166,7 +166,10 @@ void process_line(char *line)
         exit(error("OUT OF MEMORY"));
     }
 
-    if (argv[0] == NULL) return;
+    if (argv[0] == NULL) {
+        free(argv);
+        return;
+    }
 
     if (strcmp(argv[0], "exit") == 0) {
         free(argv);
