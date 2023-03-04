@@ -88,7 +88,7 @@ void run_process(char name[], char *argv[])
     if (proc == 0) {
         execvp(name, argv);
         // Execution will only reach this point if the process fails.
-        printf(ANSI_RED"%s "ANSI_RESET"is not a valid command or script.\n", argv[0]);
+        error("%s "ANSI_RESET"is not a valid command or script.\n", argv[0]);
         exit(1);
     } else if (proc < 0) {
         // If the process fails to start
