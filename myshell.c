@@ -11,7 +11,7 @@
 #define ANSI_GREEN      "\e[1;32m"
 #define ANSI_RED        "\e[1;31m"
 #define LINE_MAX        4096
-#define PATH_MAX        2048
+#define PATH_MAX        (LINE_MAX / 2)
 #define ARGS_MAX        LINE_MAX
 
 typedef const char *Colour;
@@ -39,13 +39,13 @@ int error(char fmt[], ...)
  * @param buff the string to write to.
  * @param max the number of characters to read plus one extra character for null byte.
 */
-int readline(char buff[], size_t max)
+int readline(char buff[], size_t lim)
 {
     int c, read = 0;
-    while (read < max - 1 && (c = getchar()) != EOF && c != '\n') {
+    while (read < lim - 1 && (c = getchar()) != EOF && c != '\n') {
         buff[read++] = c;
     }
-    if (read >= max - 1) fflush(stdin);
+    if (read >= lim - 1) fflush(stdin);
     buff[read] = '\0';
     return read;
 }
@@ -146,6 +146,25 @@ void parse_config_path(char config_path[PATH_MAX + 1])
 }
 
 /**
+ * Changes the current working directory but if ~ is passed,
+ * will set the current working directory to /home/USER
+ * @param dir the directory to change to
+*/
+void cd_command(char dir[PATH_MAX + 1])
+{
+    char full_dir[PATH_MAX + 1];
+
+    if (dir[0] == '~') {
+        snprintf(full_dir, PATH_MAX, "/home/%s/%s", getenv("USER"), &dir[1]);
+        dir = full_dir;
+    }
+
+    if (dir != NULL && chdir(dir) != 0) {
+        error("%s "ANSI_RESET"is not a directory.\n", dir);
+    }
+}
+
+/**
  * Converts a line to a command an arguments, and then runs it.
  * @param line the raw line entered by the user
 */
@@ -165,12 +184,28 @@ void process_line(char *line)
     if (strcmp(argv[0], "exit") == 0) {
         exit(0);
     } else if (strcmp(argv[0], "cd") == 0) {
-        if (argv[1] != NULL && chdir(argv[1]) != 0) {
-            error("%s "ANSI_RESET"is not a directory.\n", argv[1]);
-        }
+        cd_command(argv[1]);
     } else {
         run_process(argv[0], argv);
     }
+}
+
+/**
+ * Returns a substring of the current working directory
+ * omitting /home/USER if present.
+ * @param cwd the current working directory
+*/
+char *parse_cwd(char cwd[PATH_MAX + 1])
+{
+    char buff[PATH_MAX + 1];
+    snprintf(buff, PATH_MAX, "/home/%s", getenv("USER"));
+
+    int skip = 0, len = strlen(buff);
+    if (strncmp(cwd, buff, len) == 0) {
+        skip = len;
+    }
+
+    return &cwd[skip];
 }
 
 int main()
@@ -185,14 +220,16 @@ int main()
 
     toml_table_t *conf = load_config(config_path);
     if (conf != NULL) {
-        Colour c = get_prompt_colour(conf);
-        prompt_colour = c ? c : ANSI_GREEN;
+        Colour col = get_prompt_colour(conf);
+        if (col != NULL) {
+            prompt_colour = col;
+        }
         toml_free(conf);
     }
 
     while (1) {
         getcwd(cwd, PATH_MAX + 1);
-        printf("%s~%s"ANSI_RESET" $ ", prompt_colour, cwd);
+        printf("%s~%s"ANSI_RESET" $ ", prompt_colour, parse_cwd(cwd));
         readline(line, LINE_MAX + 1);
         process_line(line);
     }
